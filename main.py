@@ -1,5 +1,5 @@
 import random
-from tkinter import Tk, Button, Label, Text, DISABLED, NORMAL, END, Checkbutton, BooleanVar
+from tkinter import Tk, Button, Label, Text, DISABLED, NORMAL, END, Checkbutton, BooleanVar, Entry
 import tkinter.filedialog as fd
 from tkinter.ttk import Combobox
 
@@ -7,6 +7,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
 
+# TODO exeшник и описаник алгоритма
 def read_crv_file(f):
     with open(f, 'r') as f:
         f.readline()
@@ -32,6 +33,25 @@ class Application(Tk):
         self.text_field = None
         self.is_moving = False
         self.current_line = None
+        self.left_interval = 75
+        self.right_interval = 0
+        self.var_second_method = BooleanVar()
+        self.checkbox_second_method = Checkbutton(self, variable=self.var_second_method,
+                                                  onvalue=True, offvalue=False, text='Алгоритм углов')
+        self.checkbox_second_method.place(x=120, y=550)
+        self.entry_coeff = Entry(self, width=10)
+        self.entry_coeff.place(x=20, y=680)
+        self.label_coeff = Label(self, text='Max разность между соседними точками')
+        self.label_coeff.place(x=100, y=680)
+        self.coeff = 0.1
+        self.label_left = Label(self, text='Левая граница')
+        self.label_right = Label(self, text='Правая граница')
+        self.label_left.place(x=100, y=640)
+        self.label_right.place(x=100, y=660)
+        self.interval_left = Entry(self, width=10)
+        self.interval_left.place(x=20, y=640)
+        self.interval_right = Entry(self, width=10)
+        self.interval_right.place(x=20, y=660)
         self.points = []
         self.figure = Figure(figsize=(12, 7), dpi=100)
         self.canvas = FigureCanvasTkAgg(self.figure, self)
@@ -250,6 +270,18 @@ class Application(Tk):
         self.plot.set_xlim([0, 4000])
         self.plot.set_xlabel("мс")
         self.plot.set_ylabel("мВ")
+        try:
+            self.left_interval = int(self.interval_left.get())
+        except Exception:
+            self.left_interval = 75
+        try:
+            self.right_interval = int(self.interval_right.get())
+        except Exception:
+            self.right_interval = 0
+        try:
+            self.coeff = float(self.entry_coeff.get())
+        except Exception:
+            self.coeff = 0.5
         self.find_R_maximums()
         self.find_S_maximums()
         self.find_T_maximums()
@@ -275,16 +307,14 @@ class Application(Tk):
     def save_RR_PP(self):
         self.add_PP_periods()
         self.add_RR_periods()
-        s = 'R координаты, R периоды\n'
+        s = 'R координаты, R периоды, P координаты, P периоды\n'
         sred_R = 0
         sred_P = 0
-        for item in self.RR_period_list:
-            s += str(item[0]) + ', ' + str(item[1]) + '\n'
-            sred_R += item[1]
-        s += '\n\nP координаты, P периоды\n'
-        for item in self.PP_period_list:
-            s += str(item[0]) + ', ' + str(item[1]) + '\n'
-            sred_P += item[1]
+        for i in range(len(self.RR_period_list)):
+            s += str(self.RR_period_list[i][0]) + ', ' + str(self.RR_period_list[i][1]) + ', ' + str(
+                self.PP_period_list[i][0]) + ', ' + str(self.PP_period_list[i][1]) + '\n'
+            sred_R += self.RR_period_list[i][1]
+            sred_P += self.PP_period_list[i][1]
         s += 'RR среднее = ' + str(sred_R / len(self.RR_period_list)) + '\nPP среднее = ' + str(
             sred_P / len(self.PP_period_list))
         filename = fd.asksaveasfilename(title="Выбрать файл", initialdir="D:\\",
@@ -384,17 +414,33 @@ class Application(Tk):
 
     def P_markers(self):
         for x in self.p_list:
-            temp = self.get_left_P_marker(x[0])
+            if self.var_second_method.get():
+                temp = self.get_left_P_marker2(x[0], self.left_interval, self.right_interval, self.coeff)
+            else:
+                temp = self.get_left_P_marker1(x[0], self.left_interval, self.right_interval)
             self.p_markers.append([temp, self.get_right_P_marker(x[0])])
             self.PP_period_list.append([temp, 0, 0])
             if self.var_lines.get():
                 self.draw_marker(self.p_markers[len(self.p_markers) - 1][0], 'P')
                 self.draw_marker(self.p_markers[len(self.p_markers) - 1][1], 'P')
 
-    def get_left_P_marker(self, x):
-        t = min(self.y_list[self.current_side][x - 75:x])
-        coord = x - 75 + self.y_list[self.current_side][x - 75:x].index(t)
+    def get_left_P_marker1(self, x, left_side, right_side):
+        t = min(self.y_list[self.current_side][x - left_side:x - right_side])
+        coord = x - left_side + self.y_list[self.current_side][x - left_side:x - right_side].index(t)
         return coord
+
+    def get_left_P_marker2(self, x, left_side, right_side, coeff):
+        arr = self.y_list[self.current_side][x - left_side:x - right_side]
+        temp = 89
+        diff_prev = abs(arr[left_side - right_side - 1] - arr[left_side - right_side - 2])
+        for i in range(left_side - right_side):
+            diff = abs(arr[left_side - right_side - 1 - i] - arr[left_side - right_side - 2 - i])
+            if diff_prev < coeff * diff:
+                temp = i
+                continue
+            else:
+                return x + left_side - temp
+        return x - left_side
 
     def get_right_P_marker(self, x):
         t = min(self.y_list[self.current_side][x:x + 55])
